@@ -51,7 +51,7 @@
                 apiKey:"special-key",
                 dom_id:"swagger-ui-container",
                 supportHeaderParams: false,
-                supportedSubmitMethods: ['get', 'post', 'put'],
+                supportedSubmitMethods: ['get', 'post', 'put', 'patch'],
                 onComplete: function(swaggerApi, swaggerUi){
                     $("img[src$='throbber.gif']").attr("src", "{{ STATIC_URL }}tastypie_swagger/images/throbber.gif");
                     if(console) {

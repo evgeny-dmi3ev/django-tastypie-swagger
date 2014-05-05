@@ -62,6 +62,7 @@ class ResourceSwaggerMapping(object):
         'get-list': "Retrieve a list of %s",
         'post-list': "Create a new %s",
         'put-detail': "Update an existing %s",
+        'patch-detail': "Update an existing %s",
         'delete-detail': "Delete an existing %s",
     }
 
@@ -81,13 +82,7 @@ class ResourceSwaggerMapping(object):
     def get_related_field_type(self, field_name):
         for field in self.resource._meta.object_class._meta.fields:
             if field_name == field.name:
-                try:
-                   related_field_type = field.related_field.get_internal_type()
-                except AttributeError as e:
-                    #Compatibilty code for django < 1.6
-                    related_field_type = field.rel.get_related_field().get_internal_type()
-
-                return DJANGO_FIELD_TYPE.get(related_field_type, 'unknown')
+                 return DJANGO_FIELD_TYPE.get(field.related_field.get_internal_type(), 'unknown')
 
 
     def get_resource_verbose_name(self, plural=False):
@@ -128,7 +123,7 @@ class ResourceSwaggerMapping(object):
         parameter = {
             'paramType': paramType,
             'name': name,
-            'dataType': dataType if dataType is not None else 'unknown',
+            'dataType': dataType,
             'required': required,
             'description': description,
         }
@@ -194,10 +189,19 @@ class ResourceSwaggerMapping(object):
                     required=False,
                     description=force_unicode(desc),
                 ))
+        if hasattr(self.resource.Meta, 'custom_filtering') and method.upper() == 'GET':
+            for name, field in self.resource.Meta.custom_filtering.items():
+                parameters.append(self.build_parameter(
+                        paramType = 'query',
+                        name = name,
+                        dataType = field['dataType'],
+                        required = field['required'],
+                        description = unicode(field['description'])
+                        ))
         if 'filtering' in self.schema and method.upper() == 'GET':
             for name, field in self.schema['filtering'].items():
                 # Avoid infinite recursion for self referencing resource (issue #22)
-                if not prefix.find('{}__'.format(name)) >= 0:
+                if not prefix.startswith('{}__'.format(name)):
                     # Integer value means this points to a related model
                     if field in [ALL, ALL_WITH_RELATIONS]:
                         if field == ALL:
@@ -283,7 +287,7 @@ class ResourceSwaggerMapping(object):
                 description='Primary key of resource'))
         for name, field in fields.items():
             parameters.append(self.build_parameter(
-                paramType="query",
+                paramType=field.get("param-type", "query"),
                 name=name,
                 dataType=field.get("type", "string"),
                 required=field.get("required", True),
@@ -294,15 +298,15 @@ class ResourceSwaggerMapping(object):
         # define their own filters, along with Swagger endpoint values.
         # Minimal error checking here. If the User understands enough to want to
         # do this, assume that they know what they're doing.
-        if hasattr(self.resource.Meta, 'custom_filtering'):
-            for name, field in self.resource.Meta.custom_filtering.items():
-                parameters.append(self.build_parameter(
-                        paramType = 'query',
-                        name = name,
-                        dataType = field['dataType'],
-                        required = field['required'],
-                        description = unicode(field['description'])
-                        ))
+        #if hasattr(self.resource.Meta, 'custom_filtering'):
+            #for name, field in self.resource.Meta.custom_filtering.items():
+                #parameters.append(self.build_parameter(
+                        #paramType = 'query',
+                        #name = name,
+                        #dataType = field['dataType'],
+                        #required = field['required'],
+                        #description = unicode(field['description'])
+                        #))
 
 
         return parameters
@@ -363,6 +367,11 @@ class ResourceSwaggerMapping(object):
         if 'put' in self.schema['allowed_detail_http_methods']:
             operation = self.build_detail_operation(method='put')
             operation['parameters'].append(self.build_parameter_for_object(method='put'))
+            detail_api['operations'].append(operation)
+
+        if 'patch' in self.schema['allowed_detail_http_methods']:
+            operation = self.build_detail_operation(method='patch')
+            operation['parameters'].append(self.build_parameter_for_object(method='patch'))
             detail_api['operations'].append(operation)
 
         if 'delete' in self.schema['allowed_detail_http_methods']:
@@ -427,7 +436,7 @@ class ResourceSwaggerMapping(object):
 
         for name, field in self.schema['fields'].items():
             # Exclude fields from custom put / post object definition
-            if method in ['post','put']:
+            if method in ['post','put', 'patch']:
                 if name in self.WRITE_ACTION_IGNORED_FIELDS:
                     continue
                 if field.get('readonly'):
@@ -544,6 +553,15 @@ class ResourceSwaggerMapping(object):
                     resource_name='%s_put' % self.resource._meta.resource_name,
                     properties=self.build_properties_from_fields(method='put'),
                     id='%s_put' % self.resource_name
+                )
+            )
+
+        if 'patch' in self.resource._meta.detail_allowed_methods:
+            models.update(
+                self.build_model(
+                    resource_name='%s_patch' % self.resource._meta.resource_name,
+                    properties=self.build_properties_from_fields(method='patch'),
+                    id='%s_patch' % self.resource_name
                 )
             )
 
